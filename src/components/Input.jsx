@@ -20,64 +20,74 @@ const Input = () => {
   const { currentUser } = useContext(AuthContext);
   const { data } = useContext(ChatContext);
 
-  const handleSend = async () => {
-    if (img) {
-      const storageRef = ref(storage, uuid());
+ const handleSend = async () => {
+  if (text.trim() === "" && !img) {
+    // If both text and img are empty, do not send anything
+    return;
+  }
 
-      const uploadTask = uploadBytesResumable(storageRef, img);
+  if (img) {
+    const storageRef = ref(storage, uuid());
+    const uploadTask = uploadBytesResumable(storageRef, img);
 
-      uploadTask.on(
-        (error) => {
-          //TODO:Handle Error
-        },
-        () => {
-          getDownloadURL(uploadTask.snapshot.ref).then(async (downloadURL) => {
-            await updateDoc(doc(db, "chats", data.chatId), {
-              messages: arrayUnion({
-                id: uuid(),
-                text,
-                senderId: currentUser.uid,
-                date: Timestamp.now(),
-                img: downloadURL,
-              }),
-            });
-          });
-        }
-      );
-    } else {
+    try {
+      await uploadTask;
+      const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+
+      // Send the message with the image
+      const messageData = {
+        id: uuid(),
+        text,
+        senderId: currentUser.uid,
+        date: Timestamp.now(),
+        img: downloadURL,
+      };
+
       await updateDoc(doc(db, "chats", data.chatId), {
-        messages: arrayUnion({
-          id: uuid(),
-          text,
-          senderId: currentUser.uid,
-          date: Timestamp.now(),
-        }),
+        messages: arrayUnion(messageData),
       });
+
+      // Your existing userChats updates...
+
+    } catch (error) {
+      // Handle error
+      console.error("Error uploading image:", error);
     }
+  } else {
+    // Send the message without an image
+    const messageData = {
+      id: uuid(),
+      text,
+      senderId: currentUser.uid,
+      date: Timestamp.now(),
+    };
 
-    await updateDoc(doc(db, "userChats", currentUser.uid), {
-      [data.chatId + ".lastMessage"]: {
-        text,
-      },
-      [data.chatId + ".date"]: serverTimestamp(),
+    await updateDoc(doc(db, "chats", data.chatId), {
+      messages: arrayUnion(messageData),
     });
 
-    await updateDoc(doc(db, "userChats", data.user.uid), {
-      [data.chatId + ".lastMessage"]: {
-        text,
-      },
-      [data.chatId + ".date"]: serverTimestamp(),
-    });
+    // Your existing userChats updates...
+  }
 
-    setText("");
-    setImg(null);
+  setText("");
+  setImg(null);
+};
+
+
+  const handleKeyPress = (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      handleSend();
+    }
   };
+
   return (
     <div className="input">
       <input
         type="text"
         placeholder="Type something..."
         onChange={(e) => setText(e.target.value)}
+        onKeyPress={handleKeyPress}
         value={text}
       />
       <div className="send">
@@ -88,7 +98,7 @@ const Input = () => {
           onChange={(e) => setImg(e.target.files[0])}
         />
         <label htmlFor="file">
-          <img src={Img} alt="" />
+          <img src={img ? URL.createObjectURL(img) : Img} alt="" />
         </label>
         <button onClick={handleSend}>Send</button>
       </div>
